@@ -13,5 +13,8 @@
 	"dependencies": {
 		"usb": "0.2.0",
 		"ws": "0.4.31"
+	},
+	"devDependencies": {
+		"jslint": "0.2.x"
 	}
 }
