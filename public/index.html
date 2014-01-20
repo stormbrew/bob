@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta name="viewport" content="width=320, initial-scale=1"/>
+	<title>jsmpeg streaming</title>
+	<style type="text/css">
+		body {
+			background: #333;
+			text-align: center;
+			margin-top: 2em;
+		}	
+	</style>
+</head>
+<body>		
+	<canvas id="videoCanvas" width="640" height="480">
+		<p>
+			Please use a browser that supports the Canvas Element, like
+			<a href="http://www.google.com/chrome">Chrome</a>,
+			<a href="http://www.mozilla.com/firefox/">Firefox</a>,
+			<a href="http://www.apple.com/safari/">Safari</a> or Internet Explorer 10
+		</p>
+	</canvas>
+	<script type="text/javascript" src="jsmpg.js"></script>
+	<script type="text/javascript">
+		// Show loading notice
+		var canvas = document.getElementById('videoCanvas');
+		var ctx = canvas.getContext('2d');
+		ctx.fillStyle = '#444';
+		ctx.fillText('Loading...', canvas.width/2-30, canvas.height/3);
+
+		// Setup the WebSocket connection and start the player
+		var client = new WebSocket( 'ws://bob.local:8084/' );
+		var player = new jsmpeg(client, {canvas:canvas});
+
+		var state = {
+			chardown: null,
+		};
+		window.addEventListener("keydown", function(e) {
+			if (!state.chardown) {
+				try { // want to ignore errors about not being in the right state.
+					client.send("v"+String.fromCharCode(e.keyCode || e.charCode));
+					state.chardown = e.keyCode || e.charCode;
+				} catch (e) {}
+			}
+		});
+		window.addEventListener("keyup", function(e) {
+			if (state.chardown == (e.keyCode || e.charCode)) {
+				state.chardown = null;
+				try {
+					client.send("^"+String.fromCharCode(e.keyCode || e.charCode));
+				} catch (e) {}
+			}
+		});
+	</script>
+</body>
+</html>

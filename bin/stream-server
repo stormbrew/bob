@@ -1,0 +1,141 @@
+#!/usr/bin/env node
+
+if( process.argv.length < 3 ) {
+	console.log(
+		'Usage: \n' +
+		'node stream-server.js <secret> [<stream-port> <websocket-port>]'
+	);
+	process.exit();
+}
+
+var STREAM_SECRET = process.argv[2],
+	STREAM_PORT = process.argv[3] || 8082,
+	WEBSOCKET_PORT = process.argv[4] || 8084,
+	STREAM_MAGIC_BYTES = 'jsmp'; // Must be 4 bytes
+
+var width = 320,
+	height = 240;
+
+
+var usb = require('usb');
+var device = usb.findByIds(0x2123, 0x1010);
+if (!device) {
+	console.log("Failed to find device");
+	process.exit(1);
+}
+device.open();
+
+var commands = {
+	up:    0x02,
+    down:  0x01,
+    left:  0x04,
+    right: 0x08,
+    stop:  0x20,
+    fire:  0x10,
+};
+
+var commandMap = {
+	A: "left",
+	S: "up",
+	D: "right",
+	W: "down",
+	" ": "fire",
+};
+
+var sendCommand = function(cmd, cb) {
+	cmd_string = "\x02" + String.fromCharCode(commands[cmd]) + "\x00\x00\x00\x00\x00\x00";
+	device.controlTransfer(0x21, 0x09, 0, 0, new Buffer(cmd_string, "binary"), cb);
+};
+
+var activeCommand = null;
+var controlBob = function(msg, flags) {
+	console.log(msg);
+	var kind = msg[0];
+	var key = msg[1];
+
+	if (activeCommand && kind == '^' && key == activeCommand) {
+		sendCommand("stop", function(){
+			activeCommand = null;
+		});
+	} else if (!activeCommand && kind == 'v') {
+		if (commandMap[key]) {
+			sendCommand(commandMap[key], function(){});
+			activeCommand = key;
+		}
+	}
+};
+
+// Websocket Server
+var socketServer = new (require('ws').Server)({port: WEBSOCKET_PORT});
+socketServer.on('connection', function(socket) {
+	// Send magic bytes and video size to the newly connected socket
+	// struct { char magic[4]; unsigned short width, height;}
+	var streamHeader = new Buffer(8);
+	streamHeader.write(STREAM_MAGIC_BYTES);
+	streamHeader.writeUInt16BE(width, 4);
+	streamHeader.writeUInt16BE(height, 6);
+	socket.send(streamHeader, {binary:true});
+
+	console.log( 'New WebSocket Connection ('+socketServer.clients.length+' total)' );
+	
+	socket.on('message', controlBob);
+
+	socket.on('close', function(code, message){
+		console.log( 'Disconnected WebSocket ('+socketServer.clients.length+' total)' );
+	});
+});
+
+socketServer.broadcast = function(data, opts) {
+	for( var i in this.clients ) {
+		this.clients[i].send(data, opts);
+	}
+};
+
+
+// HTTP Server to accept incoming MPEG Stream
+var streamServer = require('http').createServer( function(request, response) {
+	var params = request.url.substr(1).split('/');
+	width = (params[1] || 320)|0;
+	height = (params[2] || 240)|0;
+
+	if( params[0] == '' ) {
+		console.log("request for homepage from " + request.socket.remoteAddress);
+		require('fs').readFile(__dirname + '/../public/index.html', function(err, contents){
+			if (err) {
+				console.log(err);
+			}
+			response.end(contents);
+		})
+	} 
+	else if (params[0] == 'jsmpg.js' ) {
+		require('fs').readFile(__dirname + '/../public/jsmpg.js', function(err, contents){
+			if (err) {
+				console.log(err);
+			}
+			response.end(contents);
+		})		
+	}
+	else if (params[0] == 'favicon.ico' ) {
+		console.log("favicon");
+		response.end();
+	}
+	else if( params[0] == STREAM_SECRET ) {
+		console.log(
+			'Stream Connected: ' + request.socket.remoteAddress + 
+			':' + request.socket.remotePort + ' size: ' + width + 'x' + height
+		);
+		request.on('data', function(data){
+			socketServer.broadcast(data, {binary:true});
+		});
+	}
+	else {
+		console.log(
+			'Failed Stream Connection: '+ request.socket.remoteAddress + 
+			request.socket.remotePort + ' - wrong secret.'
+		);
+		response.end();
+	}
+}).listen(STREAM_PORT);
+
+console.log('Listening for MPEG Stream on http://127.0.0.1:'+STREAM_PORT+'/<secret>/<width>/<height>');
+console.log('Awaiting WebSocket connections on ws://127.0.0.1:'+WEBSOCKET_PORT+'/');
