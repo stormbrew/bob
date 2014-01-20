@@ -1,0 +1,17 @@
+{
+	"name": "bob",
+	"version": "0.1.0",
+	"author": "Graham Batty <graham@stormbrew.ca>",
+	"description": "Remote control webserver for a robot built out of a nerf turret.",
+	"bin": {
+		"bob": "./bin/bob"
+	},
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/stormbrew/bob.git"
+	},
+	"dependencies": {
+		"usb": "0.2.0",
+		"ws": "0.4.31"
+	}
+}
